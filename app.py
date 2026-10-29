@@ -57,10 +57,11 @@ class Aplicacion(TkinterDnD.Tk):
     def __init__(self):
         super().__init__()
         self.title("Transcriptor de audios")
-        self.minsize(560, 520)
+        self.minsize(560, 680)
         self.audios: list[Path] = []
         self.carpeta_salida: Path | None = None
         self.ultima_carpeta: Path | None = None
+        self.resultados: list[Path] = []
         self.mensajes: queue.Queue = queue.Queue()
         self.modelos_cargados: dict[str, WhisperModel] = {}
 
@@ -125,9 +126,31 @@ class Aplicacion(TkinterDnD.Tk):
         ttk.Checkbutton(marco_opciones, text="Incluir marcas de tiempo", variable=self.con_tiempos).grid(
             row=4, column=0, columnspan=2, sticky="w")
 
+        # Transcripciones generadas
+        marco_resultados = ttk.LabelFrame(raiz, text="Transcripciones", padding=8)
+        marco_resultados.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
+        raiz.rowconfigure(2, weight=1)
+        marco_resultados.columnconfigure(0, weight=1)
+        marco_resultados.rowconfigure(0, weight=1)
+
+        self.lista_resultados = tk.Listbox(marco_resultados, height=5, selectmode="extended",
+                                           activestyle="none")
+        self.lista_resultados.grid(row=0, column=0, columnspan=3, sticky="nsew")
+        self.lista_resultados.bind("<<ListboxSelect>>", lambda _: self._actualizar_botones_resultados())
+        self.lista_resultados.bind("<Double-Button-1>", lambda _: self._abrir_transcripcion())
+        self.boton_abrir_md = ttk.Button(marco_resultados, text="Abrir transcripción", state="disabled",
+                                         command=self._abrir_transcripcion)
+        self.boton_abrir_md.grid(row=1, column=0, sticky="w", pady=(8, 0))
+        self.boton_abrir_pdf = ttk.Button(marco_resultados, text="Abrir PDF", state="disabled",
+                                          command=self._abrir_pdf)
+        self.boton_abrir_pdf.grid(row=1, column=1, sticky="e", pady=(8, 0), padx=(8, 0))
+        self.boton_convertir = ttk.Button(marco_resultados, text="Convertir a PDF", state="disabled",
+                                          command=self._convertir_a_pdf)
+        self.boton_convertir.grid(row=1, column=2, sticky="e", pady=(8, 0), padx=(8, 0))
+
         # Progreso y acciones
         marco_progreso = ttk.Frame(raiz)
-        marco_progreso.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        marco_progreso.grid(row=3, column=0, sticky="ew", pady=(12, 0))
         marco_progreso.columnconfigure(0, weight=1)
 
         self.estado = tk.StringVar(value="Arrastra uno o más audios a la lista para comenzar.")
@@ -192,6 +215,53 @@ class Aplicacion(TkinterDnD.Tk):
             self.carpeta_salida = Path(carpeta)
             self.texto_salida.set(str(self.carpeta_salida))
 
+    # ---------- Transcripciones generadas ----------
+
+    def _seleccion_resultados(self) -> list[Path]:
+        return [self.resultados[i] for i in self.lista_resultados.curselection()]
+
+    def _texto_resultado(self, md: Path) -> str:
+        return f"{md.name}  ·  MD y PDF" if md.with_suffix(".pdf").exists() else f"{md.name}  ·  MD"
+
+    def _agregar_resultado(self, md: Path):
+        self.resultados.append(md)
+        self.lista_resultados.insert("end", self._texto_resultado(md))
+        self.lista_resultados.selection_clear(0, "end")
+        self.lista_resultados.selection_set("end")
+        self.lista_resultados.see("end")
+        self._actualizar_botones_resultados()
+
+    def _actualizar_botones_resultados(self):
+        seleccion = self._seleccion_resultados()
+        con_pdf = [md for md in seleccion if md.with_suffix(".pdf").exists()]
+        self.boton_abrir_md.configure(state="normal" if seleccion else "disabled")
+        self.boton_abrir_pdf.configure(state="normal" if con_pdf else "disabled")
+        self.boton_convertir.configure(state="normal" if len(con_pdf) < len(seleccion) else "disabled")
+
+    def _abrir_transcripcion(self):
+        for md in self._seleccion_resultados():
+            abrir_en_explorador(md)
+
+    def _abrir_pdf(self):
+        for md in self._seleccion_resultados():
+            if md.with_suffix(".pdf").exists():
+                abrir_en_explorador(md.with_suffix(".pdf"))
+
+    def _convertir_a_pdf(self):
+        try:
+            for i in self.lista_resultados.curselection():
+                md = self.resultados[i]
+                if not md.with_suffix(".pdf").exists():
+                    md_a_pdf(md)
+                    self.lista_resultados.delete(i)
+                    self.lista_resultados.insert(i, self._texto_resultado(md))
+                    self.lista_resultados.selection_set(i)
+            self.estado.set("PDF creado. Usa «Abrir PDF» para verlo.")
+        except Exception as error:
+            traceback.print_exc()
+            messagebox.showerror("Transcriptor de audios", f"No se pudo crear el PDF:\n\n{error}")
+        self._actualizar_botones_resultados()
+
     # ---------- Transcripción en segundo plano ----------
 
     def _iniciar(self):
@@ -239,10 +309,12 @@ class Aplicacion(TkinterDnD.Tk):
                     transcribir(modelo, audio, op["idioma"], op["tiempos"], progreso), encoding="utf-8")
                 if op["pdf"]:
                     md_a_pdf(archivo_md)
+                enviar(("resultado", archivo_md))
                 self.ultima_carpeta = destino
                 enviar(("progreso", (n + 1) / total))
 
-            enviar(("fin", f"Listo: {total} audio{'s' if total > 1 else ''} transcrito{'s' if total > 1 else ''}."))
+            enviar(("fin", f"Listo: {total} audio{'s' if total > 1 else ''} transcrito{'s' if total > 1 else ''}. "
+                       "Puedes abrirlos o convertirlos a PDF desde «Transcripciones»."))
         except Exception as error:
             traceback.print_exc()
             enviar(("error", str(error)))
@@ -255,6 +327,8 @@ class Aplicacion(TkinterDnD.Tk):
                     self.estado.set(valor)
                 elif tipo == "progreso":
                     self.barra["value"] = valor
+                elif tipo == "resultado":
+                    self._agregar_resultado(valor)
                 elif tipo == "fin":
                     self.estado.set(valor)
                     self.boton_transcribir.configure(state="normal")
