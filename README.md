@@ -68,7 +68,8 @@ La primera ejecución descarga el modelo de Whisper (`small` pesa unos 480 MB; `
 El flujo `.github/workflows/instaladores.yml` genera:
 
 - **Windows:** `Transcriptor-<versión>-windows-instalador.exe` (Inno Setup).
-- **macOS:** `Transcriptor-<versión>-macos-arm64.dmg` (Apple Silicon) y `...-macos-intel.dmg`.
+- **macOS:** `Transcriptor-<versión>-macos-arm64.dmg` (solo Apple Silicon; `onnxruntime` ya no publica
+  paquetes para Mac Intel).
 
 Para publicar una versión, se crea y sube una etiqueta; los instaladores quedan adjuntos a la release:
 

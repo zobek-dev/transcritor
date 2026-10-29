@@ -43,15 +43,9 @@ jobs:
           name: instalador-windows
           path: dist/Transcriptor-*-windows-instalador.exe
 
+  # Solo Apple Silicon: onnxruntime (dependencia de faster-whisper) ya no publica paquetes para Mac Intel.
   macos:
-    strategy:
-      matrix:
-        include:
-          - runner: macos-15
-            arquitectura: arm64
-          - runner: macos-15-intel
-            arquitectura: intel
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
@@ -71,11 +65,11 @@ jobs:
           cp -R dist/Transcriptor.app dmg/
           ln -s /Applications dmg/Aplicaciones
           hdiutil create -volname "Transcriptor" -srcfolder dmg -format UDZO -ov \
-            "dist/Transcriptor-${APP_VERSION}-macos-${{ matrix.arquitectura }}.dmg"
+            "dist/Transcriptor-${APP_VERSION}-macos-arm64.dmg"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: instalador-macos-${{ matrix.arquitectura }}
+          name: instalador-macos
           path: dist/Transcriptor-*.dmg
 
   release:
