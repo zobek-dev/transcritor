@@ -1,6 +1,6 @@
 [project]
 name = "transcriptor-audios"
-version = "0.2.0"
+version = "0.2.1"
 description = "Transcribe audios a Markdown con Whisper en local"
 requires-python = ">=3.10"
 dependencies = [

@@ -10,6 +10,8 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+# Descarga por HTTP normal: el cliente Xet de Hugging Face falla en algunos equipos con la app empaquetada.
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
 import queue
 import subprocess
@@ -42,6 +44,22 @@ IDIOMAS = {
     "Italiano": "it",
     "Alemán": "de",
 }
+
+
+def carpeta_modelos() -> Path:
+    """Carpeta propia de la aplicación para los modelos, fuera de la caché de Hugging Face."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+    return base / "Transcriptor" / "modelos"
+
+
+def modelo_completo(carpeta: Path) -> bool:
+    modelo = carpeta / "model.bin"
+    return (carpeta / "config.json").is_file() and modelo.is_file() and modelo.stat().st_size > 1_000_000
 
 
 def abrir_en_explorador(ruta: Path):
@@ -286,13 +304,23 @@ class Aplicacion(TkinterDnD.Tk):
         try:
             modelo = self.modelos_cargados.get(op["modelo"])
             if modelo is None:
-                try:
-                    download_model(op["modelo"], local_files_only=True)
-                    enviar(("estado", "Cargando el modelo…"))
-                except Exception:
+                carpeta = carpeta_modelos() / op["modelo"]
+                if not modelo_completo(carpeta):
                     enviar(("estado", "Descargando el modelo de reconocimiento de voz. "
                                       "Solo ocurre la primera vez y puede tardar varios minutos…"))
-                modelo = WhisperModel(op["modelo"], device="cpu", compute_type="int8")
+                    try:
+                        download_model(op["modelo"], output_dir=str(carpeta))
+                    except Exception as error:
+                        raise RuntimeError(
+                            "No se pudo descargar el modelo de reconocimiento de voz. "
+                            "Revisa la conexión a internet y vuelve a intentarlo.\n\n"
+                            f"Detalle: {error}") from error
+                    if not modelo_completo(carpeta):
+                        raise RuntimeError(
+                            "La descarga del modelo quedó incompleta. "
+                            "Revisa la conexión a internet y vuelve a intentarlo.")
+                enviar(("estado", "Cargando el modelo…"))
+                modelo = WhisperModel(str(carpeta), device="cpu", compute_type="int8")
                 self.modelos_cargados[op["modelo"]] = modelo
 
             total = len(op["audios"])
