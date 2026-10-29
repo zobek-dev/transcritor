@@ -1,14 +1,20 @@
 """Transcribe archivos de audio a Markdown usando Whisper (faster-whisper) en local."""
 
 import argparse
+import dataclasses
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 
-from faster_whisper import WhisperModel
+import numpy as np
+from faster_whisper import WhisperModel, decode_audio
 
 from md_a_pdf import md_a_pdf
+
+FRECUENCIA = 16000  # Hz, la que usa Whisper
+DURACION_TRAMO = 10 * 60  # segundos por tramo; limita la memoria con audios largos
+MARGEN_CORTE = 30  # segundos antes del final del tramo donde se busca una pausa para cortar
 
 EXTENSIONES = {".ogg", ".opus", ".mp3", ".m4a", ".wav", ".flac", ".aac", ".webm", ".mp4"}
 
@@ -35,23 +41,48 @@ def agrupar_parrafos(segmentos, pausa: float = 1.5, max_caracteres: int = 600):
     return parrafos
 
 
+def puntos_de_corte(audio: np.ndarray) -> list[int]:
+    """Divide el audio en tramos de unos DURACION_TRAMO segundos, cortando en el momento más
+    silencioso de los últimos MARGEN_CORTE segundos de cada tramo para no partir palabras."""
+    ventana = FRECUENCIA // 10
+    cortes, inicio = [0], 0
+    while len(audio) - inicio > DURACION_TRAMO * FRECUENCIA:
+        fin = inicio + DURACION_TRAMO * FRECUENCIA
+        zona = audio[fin - MARGEN_CORTE * FRECUENCIA:fin]
+        energia = np.square(zona[: len(zona) // ventana * ventana]).reshape(-1, ventana).mean(axis=1)
+        inicio = fin - MARGEN_CORTE * FRECUENCIA + int(energia.argmin()) * ventana
+        cortes.append(inicio)
+    return cortes + [len(audio)]
+
+
 def transcribir(modelo: WhisperModel, ruta: Path, idioma: str | None, con_tiempos: bool,
                 progreso=None) -> str:
     """Devuelve la transcripción en Markdown. `progreso`, si se indica, recibe un valor entre 0 y 1."""
     inicio = time.time()
-    generador, info = modelo.transcribe(str(ruta), language=idioma, vad_filter=True, beam_size=5)
-    segmentos = []
-    for seg in generador:
-        segmentos.append(seg)
-        if progreso and info.duration:
-            progreso(min(seg.end / info.duration, 1.0))
+    audio = decode_audio(str(ruta), sampling_rate=FRECUENCIA)
+    duracion = len(audio) / FRECUENCIA
+    cortes = puntos_de_corte(audio)
+    segmentos, info = [], None
+    for desde, hasta in zip(cortes, cortes[1:]):
+        desplazamiento = desde / FRECUENCIA
+        generador, info_tramo = modelo.transcribe(audio[desde:hasta], language=idioma,
+                                                  vad_filter=True, beam_size=5)
+        if info is None:
+            # El idioma del primer tramo se mantiene en el resto para que sea coherente.
+            info, idioma = info_tramo, info_tramo.language
+        for seg in generador:
+            segmentos.append(dataclasses.replace(
+                seg, start=seg.start + desplazamiento, end=seg.end + desplazamiento))
+            if progreso and duracion:
+                progreso(min(segmentos[-1].end / duracion, 1.0))
+    del audio
     duracion_proceso = time.time() - inicio
 
     lineas = [
         f"# Transcripción: {ruta.stem}",
         "",
         f"- **Archivo:** `{ruta.name}`",
-        f"- **Duración:** {formatear_tiempo(info.duration)}",
+        f"- **Duración:** {formatear_tiempo(duracion)}",
         f"- **Idioma detectado:** {info.language} ({info.language_probability:.0%})",
         f"- **Fecha de transcripción:** {datetime.now():%Y-%m-%d %H:%M}",
         f"- **Tiempo de proceso:** {duracion_proceso:.1f} s",

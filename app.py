@@ -13,6 +13,7 @@ os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 # Descarga por HTTP normal: el cliente Xet de Hugging Face falla en algunos equipos con la app empaquetada.
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
+import gc
 import queue
 import subprocess
 import threading
@@ -320,6 +321,9 @@ class Aplicacion(TkinterDnD.Tk):
                             "La descarga del modelo quedó incompleta. "
                             "Revisa la conexión a internet y vuelve a intentarlo.")
                 enviar(("estado", "Cargando el modelo…"))
+                # Solo se mantiene un modelo en memoria: se libera el anterior antes de cargar otro.
+                self.modelos_cargados.clear()
+                gc.collect()
                 modelo = WhisperModel(str(carpeta), device="cpu", compute_type="int8")
                 self.modelos_cargados[op["modelo"]] = modelo
 
@@ -345,7 +349,12 @@ class Aplicacion(TkinterDnD.Tk):
                        "Puedes abrirlos o convertirlos a PDF desde «Transcripciones»."))
         except Exception as error:
             traceback.print_exc()
-            enviar(("error", str(error)))
+            mensaje = str(error)
+            if "allocate memory" in mensaje or isinstance(error, MemoryError):
+                mensaje = ("El equipo se quedó sin memoria RAM. Cierra otros programas o elige "
+                           "una calidad más baja (por ejemplo, «Rápido (base)») y vuelve a intentarlo."
+                           f"\n\nDetalle: {mensaje}")
+            enviar(("error", mensaje))
 
     def _procesar_mensajes(self):
         try:
