@@ -1,0 +1,94 @@
+# Genera los instaladores de Windows (.exe) y macOS (.dmg).
+# - Al subir una etiqueta "v*" (por ejemplo v0.2.0), publica una release con los instaladores.
+# - Al ejecutarlo a mano desde la pestaña Actions, solo los deja como artefactos descargables.
+
+name: Instaladores
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  UV_PYTHON: "3.12"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Calcular versión
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then v="${GITHUB_REF_NAME#v}"; else v="0.0.0-dev"; fi
+          echo "APP_VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Empaquetar con PyInstaller
+        run: uv run pyinstaller transcriptor.spec --noconfirm
+
+      - name: Instalar Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Crear instalador
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVersion=$env:APP_VERSION" instaladores\windows.iss'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: instalador-windows
+          path: dist/Transcriptor-*-windows-instalador.exe
+
+  macos:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15
+            arquitectura: arm64
+          - runner: macos-15-intel
+            arquitectura: intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Calcular versión
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then v="${GITHUB_REF_NAME#v}"; else v="0.0.0-dev"; fi
+          echo "APP_VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Empaquetar con PyInstaller
+        run: uv run pyinstaller transcriptor.spec --noconfirm
+
+      - name: Crear .dmg
+        run: |
+          mkdir -p dmg
+          cp -R dist/Transcriptor.app dmg/
+          ln -s /Applications dmg/Aplicaciones
+          hdiutil create -volname "Transcriptor" -srcfolder dmg -format UDZO -ov \
+            "dist/Transcriptor-${APP_VERSION}-macos-${{ matrix.arquitectura }}.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: instalador-macos-${{ matrix.arquitectura }}
+          path: dist/Transcriptor-*.dmg
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: instaladores
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: instaladores/*
+          generate_release_notes: true

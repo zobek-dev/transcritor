@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+build/
+dist/
+dmg/
+
+# Audios y transcripciones de prueba
+*.ogg
+*.opus
+*.mp3
+*.m4a
+*.wav
+AUDIO *.md
+AUDIO *.pdf
