@@ -81,5 +81,10 @@ git push origin v0.2.0
 También se puede ejecutar a mano desde la pestaña **Actions** (*Run workflow*); en ese caso los
 instaladores quedan como artefactos de la ejecución, sin crear release.
 
-Las aplicaciones no están firmadas: en macOS hay que abrirla la primera vez con clic derecho → **Abrir**,
-y en Windows, en el aviso de SmartScreen, elegir **Más información → Ejecutar de todas formas**.
+Las aplicaciones no están firmadas, así que la primera vez el sistema muestra un aviso:
+
+- **macOS:** arrastrar la aplicación a **Aplicaciones** y abrirla una vez (aparece "No se abrió 'Transcriptor'";
+  pulsar **Listo**). Después, en **Ajustes del Sistema → Privacidad y seguridad**, pulsar **Abrir de todas formas**.
+  También se puede quitar el bloqueo desde la Terminal:
+  `xattr -dr com.apple.quarantine /Applications/Transcriptor.app`
+- **Windows:** en el aviso de SmartScreen, pulsar **Más información → Ejecutar de todas formas**.
