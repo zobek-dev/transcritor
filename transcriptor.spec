@@ -8,7 +8,7 @@ import sys
 from PyInstaller.utils.hooks import collect_all
 
 datas, binaries, hiddenimports = [], [], []
-for paquete in ("faster_whisper", "ctranslate2", "onnxruntime", "av", "tokenizers", "fpdf"):
+for paquete in ("faster_whisper", "ctranslate2", "onnxruntime", "av", "tokenizers", "fpdf", "tkinterdnd2"):
     d, b, h = collect_all(paquete)
     datas += d
     binaries += b

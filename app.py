@@ -19,6 +19,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from tkinterdnd2 import DND_FILES, TkinterDnD
+
 from faster_whisper import WhisperModel
 from faster_whisper.utils import download_model
 
@@ -51,7 +53,7 @@ def abrir_en_explorador(ruta: Path):
         subprocess.run(["xdg-open", ruta])
 
 
-class Aplicacion(tk.Tk):
+class Aplicacion(TkinterDnD.Tk):
     def __init__(self):
         super().__init__()
         self.title("Transcriptor de audios")
@@ -73,7 +75,7 @@ class Aplicacion(tk.Tk):
         raiz.columnconfigure(0, weight=1)
 
         # Lista de audios
-        marco_audios = ttk.LabelFrame(raiz, text="Audios", padding=8)
+        marco_audios = ttk.LabelFrame(raiz, text="Audios (arrastra aquí archivos o carpetas)", padding=8)
         marco_audios.grid(row=0, column=0, sticky="nsew")
         raiz.rowconfigure(0, weight=1)
         marco_audios.columnconfigure(0, weight=1)
@@ -81,6 +83,11 @@ class Aplicacion(tk.Tk):
 
         self.lista = tk.Listbox(marco_audios, height=8, selectmode="extended", activestyle="none")
         self.lista.grid(row=0, column=0, columnspan=3, sticky="nsew")
+        self.color_lista = self.lista.cget("background")
+        self.lista.drop_target_register(DND_FILES)
+        self.lista.dnd_bind("<<DropEnter>>", self._arrastre_entra)
+        self.lista.dnd_bind("<<DropLeave>>", self._arrastre_sale)
+        self.lista.dnd_bind("<<Drop>>", self._soltar_audios)
         ttk.Button(marco_audios, text="Agregar audios…", command=self._agregar_audios).grid(
             row=1, column=0, sticky="w", pady=(8, 0))
         ttk.Button(marco_audios, text="Quitar seleccionados", command=self._quitar_audios).grid(
@@ -123,7 +130,7 @@ class Aplicacion(tk.Tk):
         marco_progreso.grid(row=2, column=0, sticky="ew", pady=(12, 0))
         marco_progreso.columnconfigure(0, weight=1)
 
-        self.estado = tk.StringVar(value="Agrega uno o más audios para comenzar.")
+        self.estado = tk.StringVar(value="Arrastra uno o más audios a la lista para comenzar.")
         ttk.Label(marco_progreso, textvariable=self.estado, wraplength=520).grid(
             row=0, column=0, columnspan=2, sticky="w")
         self.barra = ttk.Progressbar(marco_progreso, maximum=1.0)
@@ -140,10 +147,35 @@ class Aplicacion(tk.Tk):
         rutas = filedialog.askopenfilenames(
             title="Selecciona los audios",
             filetypes=[("Audios", tipos), ("Todos los archivos", "*.*")])
-        for ruta in map(Path, rutas):
+        self._sumar_audios(map(Path, rutas))
+
+    def _sumar_audios(self, rutas):
+        for ruta in rutas:
             if ruta not in self.audios:
                 self.audios.append(ruta)
                 self.lista.insert("end", ruta.name)
+
+    def _arrastre_entra(self, evento):
+        self.lista.configure(background="#dbeafe")
+        return evento.action
+
+    def _arrastre_sale(self, evento):
+        self.lista.configure(background=self.color_lista)
+        return evento.action
+
+    def _soltar_audios(self, evento):
+        self.lista.configure(background=self.color_lista)
+        rutas = []
+        for ruta in map(Path, self.tk.splitlist(evento.data)):
+            if ruta.is_dir():
+                rutas += sorted(p for p in ruta.iterdir() if p.suffix.lower() in EXTENSIONES)
+            elif ruta.suffix.lower() in EXTENSIONES:
+                rutas.append(ruta)
+        if rutas:
+            self._sumar_audios(rutas)
+        else:
+            self.estado.set("Los archivos soltados no son audios compatibles.")
+        return evento.action
 
     def _quitar_audios(self):
         for indice in reversed(self.lista.curselection()):

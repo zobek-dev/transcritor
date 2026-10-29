@@ -3,7 +3,13 @@ name = "transcriptor-audios"
 version = "0.1.0"
 description = "Transcribe audios a Markdown con Whisper en local"
 requires-python = ">=3.10"
-dependencies = ["faster-whisper>=1.1", "av>=11,<16", "markdown>=3.5", "fpdf2>=2.8"]
+dependencies = [
+    "faster-whisper>=1.1",
+ "av>=11,<16",
+ "markdown>=3.5",
+ "fpdf2>=2.8",
+ "tkinterdnd2>=0.7.0",
+]
 
 [dependency-groups]
 dev = ["pyinstaller>=6.10"]
